@@ -26,7 +26,10 @@ OBJ_DIR = Path('objects')
 
 def print_cert(cert: x509.Certificate) -> None:
     """Prints out various properties of a certificate."""
-    print(f'[CERTIFICATE {cert.subject.rfc4514_string().removeprefix("CN=")}]')
+    print(
+        '[CERTIFICATE'
+        f' {cert.subject.rfc4514_string().removeprefix("CN=")}]'
+    )
     print(f'  Serial: {cert.serial_number}')
     print(f'  Not valid before: {cert.not_valid_before}')
     print(f'  Not valid after: {cert.not_valid_after}')
@@ -34,17 +37,20 @@ def print_cert(cert: x509.Certificate) -> None:
     print(f'  Subject: {cert.subject.rfc4514_string()}')
     print(f'  Algorithm: {cert.signature_algorithm_oid._name}')
     print(f'  Public Key: {cert.public_key()}')
-    print(f'  # of Extentions: {len(cert.extensions)}')
+    print(
+        f'  Number of Extentions: {len(cert.extensions)}'
+        ' (not all shown)'
+    )
     # print(f'  {cert.extensions=}')
     for e in cert.extensions._extensions:
         match e.oid.dotted_string:
             case '1.3.6.1.5.5.7.1.1' | '1.3.6.1.5.5.7.1.11':
                 print(f'    {e.oid._name}:')
                 for desc in e.value:
-                    print((
+                    print(
                         f'      {desc.access_method._name}:'
                         f' {desc.access_location.value}'
-                    ))
+                    )
             case '2.5.29.31':
                 print(f'    {e.oid._name}:')
                 print(f'      {e.value[0].full_name[0].value}')
@@ -109,11 +115,11 @@ def validate_cert_chain(
         cert = x509.load_der_x509_certificate(extract_cert(der))
     if prev_cert:
         verify_signature(cert.public_key(), prev_cert)
-        print((
+        print(
             f'Valid signature: The private key of {cert.serial_number}'
             f' signed {prev_cert.serial_number}'
             '\n'
-        ))
+        )
     print_cert(cert)
     if cert.issuer == cert.subject:
         print('\n Arrived at self-signed certificate')
