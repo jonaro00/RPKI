@@ -7,6 +7,7 @@ import sysrsync
 from cryptography import x509
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.primitives.asymmetric import padding
+from Crypto.Util import asn1
 
 
 OBJ_DIR = Path('objects')
@@ -43,6 +44,17 @@ def verify_signature(issuer_public_key: _RSAPublicKey, cert: x509.Certificate) -
     )
 
 
+def extract_cert(der: bytes) -> bytes:
+    """Extracts the bytes containing the certificate from a .roa or .mft file,
+    so that it can be parsed like a .cer file."""
+    parsed_der = asn1.DerSequence()
+    # skip to signedData sequence
+    parsed_der.decode(der[19:])
+    # choose 3rd element (certificates), and skip to sequence start
+    parsed_der.decode(parsed_der[3][4:])
+    return parsed_der.encode()
+
+
 def validate_cert_chain(path: str, chain: list = [], prev_cert: x509.Certificate = None) -> None:
     if not path.startswith('rsync://'):
         raise ValueError('Invalid rsync path')
@@ -58,7 +70,10 @@ def validate_cert_chain(path: str, chain: list = [], prev_cert: x509.Certificate
         sync_source_contents=False,
     )
     der = (OBJ_DIR / path.split('/')[-1]).read_bytes()
-    cert = x509.load_der_x509_certificate(der)
+    try:
+        cert = x509.load_der_x509_certificate(der)
+    except ValueError:
+        cert = x509.load_der_x509_certificate(extract_cert(der))
     if prev_cert:
         verify_signature(cert.public_key(), prev_cert)
         print(f'Valid signature: The private key of {cert.serial_number} signed {prev_cert.serial_number}')

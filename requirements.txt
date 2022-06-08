@@ -1,2 +1,3 @@
 sysrsync==1.1.0
 cryptography==37.0.2
+pycryptodome==3.14.1
