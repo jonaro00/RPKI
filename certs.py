@@ -1,19 +1,31 @@
 #!/usr/bin/env python3
+"""
+Verify an RPKI chain of certificates.
+
+Usage:
+```
+$ ./certs.py [rsync_path]
+```
+
+Author: Johan Berg, 2022-06-08
+"""
 
 from pathlib import Path
 import sys
 
-import sysrsync
-from cryptography import x509
+from Crypto.Util import asn1 # pip install pycryptodome
+from cryptography import x509 # pip install cryptography
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.primitives.asymmetric import padding
-from Crypto.Util import asn1
+import sysrsync # pip install sysrsync
 
 
+# Where to store RPKI objects
 OBJ_DIR = Path('objects')
 
 
 def print_cert(cert: x509.Certificate) -> None:
+    """Prints out various properties of a certificate."""
     print(f'[CERTIFICATE {cert.subject.rfc4514_string().removeprefix("CN=")}]')
     print(f'  Serial: {cert.serial_number}')
     print(f'  Not valid before: {cert.not_valid_before}')
@@ -29,13 +41,20 @@ def print_cert(cert: x509.Certificate) -> None:
             case '1.3.6.1.5.5.7.1.1' | '1.3.6.1.5.5.7.1.11':
                 print(f'    {e.oid._name}:')
                 for desc in e.value:
-                    print(f'      {desc.access_method._name}: {desc.access_location.value}')
+                    print((
+                        f'      {desc.access_method._name}:'
+                        f' {desc.access_location.value}'
+                    ))
             case '2.5.29.31':
                 print(f'    {e.oid._name}:')
                 print(f'      {e.value[0].full_name[0].value}')
 
 
-def verify_signature(issuer_public_key: _RSAPublicKey, cert: x509.Certificate) -> None:
+def verify_signature(
+        issuer_public_key: _RSAPublicKey,
+        cert: x509.Certificate,
+    ) -> None:
+    """Verifies that the cert is signed by the issuer's private key."""
     issuer_public_key.verify(
         cert.signature,
         cert.tbs_certificate_bytes,
@@ -45,8 +64,8 @@ def verify_signature(issuer_public_key: _RSAPublicKey, cert: x509.Certificate) -
 
 
 def extract_cert(der: bytes) -> bytes:
-    """Extracts the bytes containing the certificate from a .roa or .mft file,
-    so that it can be parsed like a .cer file."""
+    """Extracts the bytes containing the certificate from a .roa
+    or .mft file, so that it can be parsed like a .cer file."""
     parsed_der = asn1.DerSequence()
     # skip to signedData sequence
     parsed_der.decode(der[19:])
@@ -55,20 +74,34 @@ def extract_cert(der: bytes) -> bytes:
     return parsed_der.encode()
 
 
-def validate_cert_chain(path: str, chain: list = [], prev_cert: x509.Certificate = None) -> None:
+def fetch_rsync_resource(
+        path: str,
+        target_dir: Path | str = '.',
+    ) -> None:
+    """Downloads rsync path to target directory."""
     if not path.startswith('rsync://'):
         raise ValueError('Invalid rsync path')
-    if path in chain:
-        raise ValueError('Loop detected')
-    print()
-    chain.append(path)
-    OBJ_DIR.mkdir(exist_ok=True)
+    Path(target_dir).mkdir(exist_ok=True)
     sysrsync.run(
         source=path,
-        destination=str(OBJ_DIR),
+        destination=str(target_dir),
         options=['--no-motd'],
         sync_source_contents=False,
     )
+
+
+def validate_cert_chain(
+        path: str,
+        chain: list = [],
+        prev_cert: x509.Certificate = None,
+    ) -> None:
+    """Recursively fetches and validates a chain of signed objects or
+    certificates until a self-signed certificate is encountered."""
+    print()
+    if path in chain:
+        raise ValueError('Loop detected')
+    chain.append(path)
+    fetch_rsync_resource(path, OBJ_DIR)
     der = (OBJ_DIR / path.split('/')[-1]).read_bytes()
     try:
         cert = x509.load_der_x509_certificate(der)
@@ -76,24 +109,30 @@ def validate_cert_chain(path: str, chain: list = [], prev_cert: x509.Certificate
         cert = x509.load_der_x509_certificate(extract_cert(der))
     if prev_cert:
         verify_signature(cert.public_key(), prev_cert)
-        print(f'Valid signature: The private key of {cert.serial_number} signed {prev_cert.serial_number}')
-        print()
+        print((
+            f'Valid signature: The private key of {cert.serial_number}'
+            f' signed {prev_cert.serial_number}'
+            '\n'
+        ))
     print_cert(cert)
     if cert.issuer == cert.subject:
-        print('Self-signed certificate')
+        print('\n Arrived at self-signed certificate')
         return
     for e in cert.extensions._extensions:
-        match e.oid.dotted_string:
-            case '1.3.6.1.5.5.7.1.1':
-                validate_cert_chain(e.value[0].access_location.value, chain, cert)
-                break
+        if e.oid.dotted_string == '1.3.6.1.5.5.7.1.1':
+            validate_cert_chain(
+                e.value[0].access_location.value,
+                chain,
+                cert,
+            )
+            break
     else:
         raise ValueError('Issuer not found')
 
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print('Please provide an rsync path to an RPKI certificate.')
+        print('Please provide an rsync path to an RPKI object.')
         exit()
     print(f'Checking certificate chain starting from {sys.argv[1]}')
     validate_cert_chain(sys.argv[1])
