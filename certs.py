@@ -14,7 +14,7 @@ OBJ_DIR = Path('objects')
 
 
 def print_cert(cert: x509.Certificate) -> None:
-    print('CERTIFICATE:')
+    print(f'[CERTIFICATE {cert.subject.rfc4514_string().removeprefix("CN=")}]')
     print(f'  Serial: {cert.serial_number}')
     print(f'  Not valid before: {cert.not_valid_before}')
     print(f'  Not valid after: {cert.not_valid_after}')
