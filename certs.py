@@ -17,6 +17,10 @@ from Crypto.Util import asn1 # pip install pycryptodome
 from cryptography import x509 # pip install cryptography
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+)
 import sysrsync # pip install sysrsync
 
 
@@ -36,12 +40,15 @@ def print_cert(cert: x509.Certificate) -> None:
     print(f'  Issuer: {cert.issuer.rfc4514_string()}')
     print(f'  Subject: {cert.subject.rfc4514_string()}')
     print(f'  Algorithm: {cert.signature_algorithm_oid._name}')
-    print(f'  Public Key: {cert.public_key()}')
-    print(
-        f'  Number of Extentions: {len(cert.extensions)}'
-        ' (not all shown)'
+    pk = (
+        cert
+        .public_key()
+        .public_bytes(Encoding.DER, PublicFormat.PKCS1)
     )
-    # print(f'  {cert.extensions=}')
+    hex = pk.hex()
+    print(f'  Public Key: {hex[:16]}...{hex[-16:]} ({len(pk)} bytes)')
+    print(f'  Number of Extentions: {len(cert.extensions)}')
+    print( '  Extensions (not all shown):')
     for e in cert.extensions._extensions:
         match e.oid.dotted_string:
             case '1.3.6.1.5.5.7.1.1' | '1.3.6.1.5.5.7.1.11':
