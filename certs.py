@@ -10,6 +10,7 @@ $ ./certs.py [rsync_path]
 Author: Johan Berg, 2022-06-08
 """
 
+import base64
 from pathlib import Path
 import sys
 
@@ -17,11 +18,35 @@ from Crypto.Util import asn1 # pip install pycryptodome
 from cryptography import x509 # pip install cryptography
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+)
 import sysrsync # pip install sysrsync
 
 
 # Where to store RPKI objects
 OBJ_DIR = Path('objects')
+# Where TAL files are stored
+TAL_DIR = Path('tal')
+
+
+def verify_ta(path: str, cert: x509.Certificate) -> Path:
+    """Looks for ......................................................................................"""
+    for tal_file in TAL_DIR.iterdir():
+        text = tal_file.read_text()
+        if path in text:
+            tal_pk_der = base64.b64decode(text.split('\n\n')[-1])
+            cert_pk_der = cert.public_key().public_bytes(
+                Encoding.DER,
+                PublicFormat.SubjectPublicKeyInfo,
+            )
+            if not tal_pk_der == cert_pk_der:
+                raise ValueError('TAL Public keys did not match.')
+            return tal_file
+    raise ValueError(
+        'Did not find provided root certificate URI in any TAL file.'
+    )
 
 
 def print_cert(cert: x509.Certificate) -> None:
@@ -119,7 +144,13 @@ def validate_cert_chain(
         )
     print_cert(cert)
     if cert.issuer == cert.subject:
-        print('\n Arrived at self-signed certificate')
+        print('\nArrived at self-signed certificate')
+        found_tal = verify_ta(path, cert)
+        print(
+            '\nRoot certificate URI and '
+            'its public key matches TAL file:'
+        )
+        print(f'{path!r} found in {found_tal}')
         return
     for e in cert.extensions._extensions:
         if e.oid.dotted_string == '1.3.6.1.5.5.7.1.1':
