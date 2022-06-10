@@ -32,7 +32,9 @@ TAL_DIR = Path('tal')
 
 
 def verify_ta(path: str, cert: x509.Certificate) -> Path:
-    """Looks for ......................................................................................"""
+    """Looks through files in the TAL directory for a certificate
+    with a matching `path`, and verifies that the TAL's public key
+    matches the one of `cert`."""
     for tal_file in TAL_DIR.iterdir():
         text = tal_file.read_text()
         if path in text:
